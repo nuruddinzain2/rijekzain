@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keluarga yang Perlu Dirijek</title>
+<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --ink:#1c2b28; --paper:#f6f4ee; --line:#d9d3c4;
+    --green:#2f6b4f; --green-bg:#e4efe6;
+    --amber:#a05a2c; --amber-bg:#f6e8db;
+    --accent:#3a6f63;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--paper);color:var(--ink);}
+  header{padding:20px 16px 12px;border-bottom:2px solid var(--ink);}
+  h1{margin:0 0 4px;font-size:1.4rem;letter-spacing:-0.01em;}
+  .sub{margin:0;font-size:.85rem;color:#5c6b66;}
+  .stats{display:flex;gap:14px;margin-top:10px;font-size:.8rem;flex-wrap:wrap;}
+  .stats span b{font-size:1rem;}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;}
+  .toolbar select, .toolbar input[type=text]{padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:.9rem;background:#fff;flex:1;min-width:120px;}
+  .btn{padding:8px 12px;border:1px solid var(--ink);border-radius:6px;background:var(--ink);color:#fff;font-size:.85rem;cursor:pointer;white-space:nowrap;}
+  .btn.secondary{background:#fff;color:var(--ink);}
+  .btn:active{opacity:.8;}
+  #fileInput{display:none;}
+  main{padding:12px 16px 60px;max-width:900px;margin:0 auto;}
+  .grid{display:grid;grid-template-columns:1fr;gap:10px;}
+  @media(min-width:640px){.grid{grid-template-columns:1fr 1fr;}}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;}
+  .card .nama{font-weight:600;font-size:1rem;margin:0 0 6px;}
+  .meta{display:flex;flex-wrap:wrap;gap:6px;font-size:.75rem;margin-bottom:8px;}
+  .tag{background:#efece2;border-radius:5px;padding:3px 7px;color:#5c6b66;}
+  .tag.missing{background:#fbeee0;color:var(--amber);cursor:pointer;}
+  .row-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+  .status-btn{flex:1;padding:7px 8px;border-radius:6px;border:1px solid transparent;font-size:.8rem;font-weight:600;cursor:pointer;}
+  .status-btn.belum{background:var(--amber-bg);color:var(--amber);}
+  .status-btn.sudah{background:var(--green-bg);color:var(--green);}
+  .edit-btn{padding:7px 9px;border-radius:6px;border:1px solid var(--line);background:#fff;font-size:.8rem;cursor:pointer;}
+  .edit-panel{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);display:none;gap:6px;flex-direction:column;}
+  .edit-panel.open{display:flex;}
+  .edit-panel input, .edit-panel select{padding:6px 8px;border:1px solid var(--line);border-radius:5px;font-size:.85rem;}
+  .empty, .loading{text-align:center;padding:40px 10px;color:#7a867f;font-size:.9rem;}
+  footer{text-align:center;font-size:.75rem;color:#8a968f;padding:16px;}
+  @media print{
+    .toolbar, footer, .edit-btn, .row-actions .edit-btn{display:none!important;}
+    body{background:#fff;}
+    .card{break-inside:avoid;border:1px solid #999;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Keluarga yang Perlu Dirijek</h1>
+  <p class="sub">Kelurahan Basirih Selatan &amp; Kelurahan Kelayan Selatan</p>
+  <div class="stats">
+    <span>Total <b id="statTotal">0</b></span>
+    <span>Belum Rijek <b id="statBelum">0</b></span>
+    <span>Sudah Rijek <b id="statSudah">0</b></span>
+  </div>
+</header>
+
+<div class="toolbar">
+  <select id="filterKelurahan">
+    <option value="">Semua Kelurahan</option>
+    <option value="Basirih Selatan">Basirih Selatan</option>
+    <option value="Kelayan Selatan">Kelayan Selatan</option>
+    <option value="__kosong">Belum Diisi</option>
+  </select>
+  <select id="filterStatus">
+    <option value="">Semua Status</option>
+    <option value="Belum Rijek" selected>Belum Rijek</option>
+    <option value="Sudah Rijek">Sudah Rijek</option>
+  </select>
+  <input type="text" id="search" placeholder="Cari nama...">
+  <button class="btn secondary" id="uploadBtn">Upload</button>
+  <input type="file" id="fileInput" accept=".txt,.csv,.xlsx,.xls">
+  <button class="btn secondary" id="printBtn">Cetak</button>
+  <button class="btn" id="refreshBtn">Muat Ulang</button>
+</div>
+
+<main>
+  <div id="content" class="loading">Memuat data...</div>
+</main>
+<footer>Data tersimpan di Google Sheet melalui Apps Script.</footer>
+
+<script>
+// Ganti dengan URL Web App Apps Script kamu (diakhiri /exec)
+const API_URL = 'GANTI_DENGAN_URL_WEB_APP_ANDA';
+
+let allData = [];
+
+async function apiGet(){
+  const res = await fetch(API_URL);
+  const json = await res.json();
+  return json.data || [];
+}
+async function apiPost(action, payload){
+  const res = await fetch(API_URL, {
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({action, payload})
+  });
+  return res.json();
+}
+
+function normalize(str){ return (str||'').toString().trim(); }
+
+function render(){
+  const kel = document.getElementById('filterKelurahan').value;
+  const status = document.getElementById('filterStatus').value;
+  const q = document.getElementById('search').value.toLowerCase().trim();
+
+  let rows = allData.filter(r=>{
+    if (kel === '__kosong' && normalize(r.Kelurahan) !== '') return false;
+    if (kel && kel !== '__kosong' && r.Kelurahan !== kel) return false;
+    if (status && r.Status !== status) return false;
+    if (q && !normalize(r.Nama).toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  rows.sort((a,b)=> normalize(a.Nama).localeCompare(normalize(b.Nama), 'id', {sensitivity:'base'}));
+
+  document.getElementById('statTotal').textContent = allData.length;
+  document.getElementById('statBelum').textContent = allData.filter(r=>r.Status==='Belum Rijek').length;
+  document.getElementById('statSudah').textContent = allData.filter(r=>r.Status==='Sudah Rijek').length;
+
+  const content = document.getElementById('content');
+  if (!rows.length){ content.innerHTML = '<div class="empty">Tidak ada data yang cocok.</div>'; return; }
+
+  content.innerHTML = '<div class="grid">' + rows.map(cardHtml).join('') + '</div>';
+
+  rows.forEach(r=>{
+    document.getElementById('status-'+r.ID).onclick = ()=>toggleStatus(r);
+    document.getElementById('editToggle-'+r.ID).onclick = ()=>{
+      document.getElementById('panel-'+r.ID).classList.toggle('open');
+    };
+    document.getElementById('save-'+r.ID).onclick = ()=>saveEdit(r);
+  });
+}
+
+function cardHtml(r){
+  const belum = r.Status !== 'Sudah Rijek';
+  const kel = normalize(r.Kelurahan) || 'Kelurahan belum diisi';
+  const rt = normalize(r.RT) ? 'RT '+r.RT : 'RT belum diisi';
+  const rw = normalize(r.RW) ? 'RW '+r.RW : '';
+  const sub = normalize(r.Sub) ? 'Sub '+r.Sub : '';
+  return `
+  <div class="card">
+    <p class="nama">${escapeHtml(r.Nama)}</p>
+    <div class="meta">
+      <span class="tag ${normalize(r.Kelurahan)?'':'missing'}">${kel}</span>
+      <span class="tag ${normalize(r.RT)?'':'missing'}">${rt}</span>
+      ${rw?`<span class="tag">${rw}</span>`:''}
+      ${sub?`<span class="tag">${sub}</span>`:''}
+    </div>
+    <div class="row-actions">
+      <button id="status-${r.ID}" class="status-btn ${belum?'belum':'sudah'}">${belum?'Belum Rijek — Tandai Sudah':'Sudah Rijek — Tandai Belum'}</button>
+      <button id="editToggle-${r.ID}" class="edit-btn">Lengkapi</button>
+    </div>
+    <div id="panel-${r.ID}" class="edit-panel">
+      <select id="kel-${r.ID}">
+        <option value="">Pilih kelurahan</option>
+        <option value="Basirih Selatan" ${r.Kelurahan==='Basirih Selatan'?'selected':''}>Basirih Selatan</option>
+        <option value="Kelayan Selatan" ${r.Kelurahan==='Kelayan Selatan'?'selected':''}>Kelayan Selatan</option>
+      </select>
+      <input id="rt-${r.ID}" type="text" placeholder="RT" value="${escapeHtml(r.RT)}">
+      <input id="rw-${r.ID}" type="text" placeholder="RW" value="${escapeHtml(r.RW)}">
+      <input id="sub-${r.ID}" type="text" placeholder="Sub" value="${escapeHtml(r.Sub)}">
+      <button id="save-${r.ID}" class="btn">Simpan</button>
+    </div>
+  </div>`;
+}
+
+function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function toggleStatus(r){
+  const newStatus = r.Status === 'Sudah Rijek' ? 'Belum Rijek' : 'Sudah Rijek';
+  r.Status = newStatus; // optimistic
+  render();
+  await apiPost('update', {id:r.ID, status:newStatus});
+}
+
+async function saveEdit(r){
+  const kelurahan = document.getElementById('kel-'+r.ID).value;
+  const rt = document.getElementById('rt-'+r.ID).value;
+  const rw = document.getElementById('rw-'+r.ID).value;
+  const sub = document.getElementById('sub-'+r.ID).value;
+  r.Kelurahan = kelurahan; r.RT = rt; r.RW = rw; r.Sub = sub;
+  render();
+  await apiPost('update', {id:r.ID, kelurahan, rt, rw, sub});
+}
+
+async function loadData(){
+  document.getElementById('content').innerHTML = '<div class="loading">Memuat data...</div>';
+  try{
+    allData = await apiGet();
+    render();
+  }catch(err){
+    document.getElementById('content').innerHTML = '<div class="empty">Gagal memuat data. Periksa API_URL di kode. ('+err+')</div>';
+  }
+}
+
+// ---- Upload TXT (format RT/RW/Sub bertingkat seperti daftar asli) ----
+function parseTxt(text){
+  const lines = text.split(/\r?\n/);
+  let curRt='', curRw='', curSub='', curKel='';
+  const out=[];
+  lines.forEach(raw=>{
+    let line = raw.replace(/^[\u2011\u2012\u2013\u2014\-\*\.\u2022]+\s*/,'').replace(/^\d+[\.\)]\s*/,'').trim();
+    if(!line) return;
+    const rtMatch = line.match(/^RT\.?\s*0*(\d+)/i);
+    if (rtMatch){
+      curRt = rtMatch[1];
+      const rwMatch = line.match(/RW\.?\s*0*(\d+)/i);
+      curRw = rwMatch ? rwMatch[1] : '';
+      curSub = '';
+      const kelMatch = line.match(/basirih selatan|kelayan selatan/i);
+      curKel = kelMatch ? titleCase(kelMatch[0]) : '';
+      return;
+    }
+    const subMatch = line.match(/^SUB\.?\s*0*(\d+)/i);
+    if (subMatch){ curSub = subMatch[1]; return; }
+    out.push({nama:line, rt:curRt, rw:curRw, sub:curSub, kelurahan:curKel, status:'Belum Rijek'});
+  });
+  return out;
+}
+function titleCase(s){ return s.replace(/\w\S*/g, t=> t[0].toUpperCase()+t.slice(1).toLowerCase()); }
+
+function parseSheetRows(rows){
+  // rows: array of objects from xlsx, flexible header casing
+  return rows.map(r=>{
+    const get = (keys)=>{ for(const k of Object.keys(r)){ if(keys.includes(k.trim().toLowerCase())) return r[k]; } return ''; };
+    return {
+      nama: get(['nama','name']),
+      rt: get(['rt']),
+      rw: get(['rw']),
+      sub: get(['sub']),
+      kelurahan: get(['kelurahan']),
+      status: get(['status']) || 'Belum Rijek'
+    };
+  }).filter(r=>normalize(r.nama));
+}
+
+document.getElementById('uploadBtn').onclick = ()=>document.getElementById('fileInput').click();
+document.getElementById('fileInput').onchange = async (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const name = file.name.toLowerCase();
+  let entries = [];
+  if (name.endsWith('.txt')){
+    const text = await file.text();
+    entries = parseTxt(text);
+  } else if (name.endsWith('.csv')){
+    const text = await file.text();
+    const wb = XLSX.read(text, {type:'string'});
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    entries = parseSheetRows(rows);
+  } else {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:'array'});
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    entries = parseSheetRows(rows);
+  }
+  if(!entries.length){ alert('Tidak ada data terbaca dari file ini.'); e.target.value=''; return; }
+  document.getElementById('content').innerHTML = '<div class="loading">Mengunggah '+entries.length+' data...</div>';
+  await apiPost('bulkImport', entries);
+  e.target.value='';
+  loadData();
+};
+
+document.getElementById('printBtn').onclick = ()=>window.print();
+document.getElementById('refreshBtn').onclick = loadData;
+document.getElementById('filterKelurahan').onchange = render;
+document.getElementById('filterStatus').onchange = render;
+document.getElementById('search').oninput = render;
+
+loadData();
+</script>
+</body>
+</html>
