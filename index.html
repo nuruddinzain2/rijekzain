@@ -45,9 +45,19 @@
   .edit-panel.open{display:flex;}
   .edit-panel input, .edit-panel select{padding:6px 8px;border:1px solid var(--line);border-radius:5px;font-size:.85rem;}
   .empty, .loading{text-align:center;padding:40px 10px;color:#7a867f;font-size:.9rem;}
+  table{width:100%;border-collapse:collapse;background:#fff;font-size:.85rem;}
+  thead th{text-align:left;padding:8px 10px;border-bottom:2px solid var(--ink);white-space:nowrap;position:sticky;top:96px;background:#fff;}
+  tbody td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  tbody tr:hover{background:#faf9f4;}
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:8px;}
+  .status-pill{padding:4px 9px;border-radius:5px;font-size:.75rem;font-weight:600;border:none;cursor:pointer;white-space:nowrap;}
+  .status-pill.belum{background:var(--amber-bg);color:var(--amber);}
+  .status-pill.sudah{background:var(--green-bg);color:var(--green);}
+  .table-edit-btn{padding:5px 8px;border-radius:5px;border:1px solid var(--line);background:#fff;font-size:.75rem;cursor:pointer;}
+  .miss{color:var(--amber);}
   footer{text-align:center;font-size:.75rem;color:#8a968f;padding:16px;}
   @media print{
-    .toolbar, footer, .edit-btn, .row-actions .edit-btn{display:none!important;}
+    .toolbar, footer, .edit-btn, .row-actions .edit-btn, .table-edit-btn{display:none!important;}
     body{background:#fff;}
     .card{break-inside:avoid;border:1px solid #999;}
   }
@@ -80,6 +90,7 @@
     <option value="">Semua RT</option>
   </select>
   <input type="text" id="search" placeholder="Cari nama...">
+  <button class="btn secondary" id="viewToggleBtn">Tampilan: Tabel</button>
   <button class="btn secondary" id="uploadBtn">Upload</button>
   <input type="file" id="fileInput" accept=".txt,.csv,.xlsx,.xls">
   <button class="btn secondary" id="printBtn">Cetak</button>
@@ -96,6 +107,7 @@
 const API_URL = 'https://script.google.com/macros/s/AKfycbzaMswr4tYXOsUSUiCsGqsGkuaYZQuywyU7QJea29YFtbmbE9a4BeD5vq0tPYwMEuOLNQ/exec';
 
 let allData = [];
+let currentView = 'tabel';
 
 async function apiGet(){
   const res = await fetch(API_URL);
@@ -149,6 +161,14 @@ function render(){
   const content = document.getElementById('content');
   if (!rows.length){ content.innerHTML = '<div class="empty">Tidak ada data yang cocok.</div>'; return; }
 
+  if (currentView === 'tabel'){
+    renderTable(rows, content);
+  } else {
+    renderCards(rows, content);
+  }
+}
+
+function renderCards(rows, content){
   // Kelompokkan per RT
   const groups = {};
   rows.forEach(r=>{
@@ -177,6 +197,56 @@ function render(){
     };
     document.getElementById('save-'+r.ID).onclick = ()=>saveEdit(r);
   });
+}
+
+function renderTable(rows, content){
+  content.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr>
+      <th>Nama</th><th>RT</th><th>RW</th><th>Sub</th><th>Kelurahan</th><th>Status</th><th></th>
+    </tr></thead>
+    <tbody>${rows.map(tableRowHtml).join('')}</tbody>
+  </table></div>`;
+
+  rows.forEach(r=>{
+    document.getElementById('tstatus-'+r.ID).onclick = ()=>toggleStatus(r);
+    document.getElementById('teditToggle-'+r.ID).onclick = ()=>{
+      const panel = document.getElementById('trow-panel-'+r.ID);
+      panel.style.display = panel.style.display === 'table-row' ? 'none' : 'table-row';
+    };
+    document.getElementById('tsave-'+r.ID).onclick = ()=>saveEdit(r);
+  });
+}
+
+function tableRowHtml(r){
+  const belum = r.Status !== 'Sudah Rijek';
+  const rt = normalize(r.RT) || '<span class="miss">-</span>';
+  const rw = normalize(r.RW) || '-';
+  const sub = normalize(r.Sub) || '-';
+  const kel = normalize(r.Kelurahan) || '<span class="miss">Belum diisi</span>';
+  return `<tr>
+    <td>${escapeHtml(r.Nama)}</td>
+    <td>${rt}</td>
+    <td>${rw}</td>
+    <td>${sub}</td>
+    <td>${kel}</td>
+    <td><button id="tstatus-${r.ID}" class="status-pill ${belum?'belum':'sudah'}">${belum?'Belum Rijek':'Sudah Rijek'}</button></td>
+    <td><button id="teditToggle-${r.ID}" class="table-edit-btn">Lengkapi</button></td>
+  </tr>
+  <tr id="trow-panel-${r.ID}" style="display:none;">
+    <td colspan="7">
+      <div class="edit-panel open" style="flex-direction:row;flex-wrap:wrap;">
+        <select id="kel-${r.ID}">
+          <option value="">Pilih kelurahan</option>
+          <option value="Basirih Selatan" ${r.Kelurahan==='Basirih Selatan'?'selected':''}>Basirih Selatan</option>
+          <option value="Kelayan Selatan" ${r.Kelurahan==='Kelayan Selatan'?'selected':''}>Kelayan Selatan</option>
+        </select>
+        <input id="rt-${r.ID}" type="text" placeholder="RT" value="${escapeHtml(r.RT)}" style="width:70px;">
+        <input id="rw-${r.ID}" type="text" placeholder="RW" value="${escapeHtml(r.RW)}" style="width:70px;">
+        <input id="sub-${r.ID}" type="text" placeholder="Sub" value="${escapeHtml(r.Sub)}" style="width:70px;">
+        <button id="tsave-${r.ID}" class="btn">Simpan</button>
+      </div>
+    </td>
+  </tr>`;
 }
 
 function cardHtml(r){
@@ -227,6 +297,7 @@ async function saveEdit(r){
   const rw = document.getElementById('rw-'+r.ID).value;
   const sub = document.getElementById('sub-'+r.ID).value;
   r.Kelurahan = kelurahan; r.RT = rt; r.RW = rw; r.Sub = sub;
+  populateRtFilter();
   render();
   await apiPost('update', {id:r.ID, kelurahan, rt, rw, sub});
 }
@@ -316,6 +387,11 @@ document.getElementById('filterKelurahan').onchange = render;
 document.getElementById('filterStatus').onchange = render;
 document.getElementById('filterRT').onchange = render;
 document.getElementById('search').oninput = render;
+document.getElementById('viewToggleBtn').onclick = ()=>{
+  currentView = currentView === 'tabel' ? 'kartu' : 'tabel';
+  document.getElementById('viewToggleBtn').textContent = 'Tampilan: ' + (currentView === 'tabel' ? 'Kartu' : 'Tabel');
+  render();
+};
 
 loadData();
 </script>
