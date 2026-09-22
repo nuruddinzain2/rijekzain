@@ -28,6 +28,9 @@
   main{padding:12px 16px 60px;max-width:900px;margin:0 auto;}
   .grid{display:grid;grid-template-columns:1fr;gap:10px;}
   @media(min-width:640px){.grid{grid-template-columns:1fr 1fr;}}
+  .rt-group{margin-bottom:22px;}
+  .rt-heading{font-size:1rem;margin:0 0 10px;padding-bottom:6px;border-bottom:2px solid var(--ink);color:var(--ink);}
+  .rt-count{font-weight:400;color:#7a867f;font-size:.85rem;}
   .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;}
   .card .nama{font-weight:600;font-size:1rem;margin:0 0 6px;}
   .meta{display:flex;flex-wrap:wrap;gap:6px;font-size:.75rem;margin-bottom:8px;}
@@ -73,6 +76,9 @@
     <option value="Belum Rijek" selected>Belum Rijek</option>
     <option value="Sudah Rijek">Sudah Rijek</option>
   </select>
+  <select id="filterRT">
+    <option value="">Semua RT</option>
+  </select>
   <input type="text" id="search" placeholder="Cari nama...">
   <button class="btn secondary" id="uploadBtn">Upload</button>
   <input type="file" id="fileInput" accept=".txt,.csv,.xlsx,.xls">
@@ -107,15 +113,29 @@ async function apiPost(action, payload){
 
 function normalize(str){ return (str||'').toString().trim(); }
 
+function populateRtFilter(){
+  const sel = document.getElementById('filterRT');
+  const current = sel.value;
+  const rts = Array.from(new Set(allData.map(r=>normalize(r.RT)).filter(v=>v!=='')));
+  rts.sort((a,b)=> a.localeCompare(b, 'id', {numeric:true}));
+  sel.innerHTML = '<option value="">Semua RT</option>' +
+    rts.map(rt=>`<option value="${escapeHtml(rt)}">RT ${escapeHtml(rt)}</option>`).join('') +
+    '<option value="__kosong">RT Belum Diisi</option>';
+  if ([...sel.options].some(o=>o.value===current)) sel.value = current;
+}
+
 function render(){
   const kel = document.getElementById('filterKelurahan').value;
   const status = document.getElementById('filterStatus').value;
+  const rt = document.getElementById('filterRT').value;
   const q = document.getElementById('search').value.toLowerCase().trim();
 
   let rows = allData.filter(r=>{
     if (kel === '__kosong' && normalize(r.Kelurahan) !== '') return false;
     if (kel && kel !== '__kosong' && r.Kelurahan !== kel) return false;
     if (status && r.Status !== status) return false;
+    if (rt === '__kosong' && normalize(r.RT) !== '') return false;
+    if (rt && rt !== '__kosong' && normalize(r.RT) !== rt) return false;
     if (q && !normalize(r.Nama).toLowerCase().includes(q)) return false;
     return true;
   });
@@ -129,7 +149,26 @@ function render(){
   const content = document.getElementById('content');
   if (!rows.length){ content.innerHTML = '<div class="empty">Tidak ada data yang cocok.</div>'; return; }
 
-  content.innerHTML = '<div class="grid">' + rows.map(cardHtml).join('') + '</div>';
+  // Kelompokkan per RT
+  const groups = {};
+  rows.forEach(r=>{
+    const key = normalize(r.RT) || '__kosong';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(r);
+  });
+  const groupKeys = Object.keys(groups).sort((a,b)=>{
+    if (a==='__kosong') return 1;
+    if (b==='__kosong') return -1;
+    return a.localeCompare(b, 'id', {numeric:true});
+  });
+
+  content.innerHTML = groupKeys.map(key=>{
+    const label = key==='__kosong' ? 'RT Belum Diisi' : 'RT '+key;
+    return `<div class="rt-group">
+      <h2 class="rt-heading">${escapeHtml(label)} <span class="rt-count">(${groups[key].length})</span></h2>
+      <div class="grid">${groups[key].map(cardHtml).join('')}</div>
+    </div>`;
+  }).join('');
 
   rows.forEach(r=>{
     document.getElementById('status-'+r.ID).onclick = ()=>toggleStatus(r);
@@ -196,6 +235,7 @@ async function loadData(){
   document.getElementById('content').innerHTML = '<div class="loading">Memuat data...</div>';
   try{
     allData = await apiGet();
+    populateRtFilter();
     render();
   }catch(err){
     document.getElementById('content').innerHTML = '<div class="empty">Gagal memuat data. Periksa API_URL di kode. ('+err+')</div>';
@@ -274,6 +314,7 @@ document.getElementById('printBtn').onclick = ()=>window.print();
 document.getElementById('refreshBtn').onclick = loadData;
 document.getElementById('filterKelurahan').onchange = render;
 document.getElementById('filterStatus').onchange = render;
+document.getElementById('filterRT').onchange = render;
 document.getElementById('search').oninput = render;
 
 loadData();
