@@ -46,7 +46,7 @@
   .edit-panel input, .edit-panel select{padding:6px 8px;border:1px solid var(--line);border-radius:5px;font-size:.85rem;}
   .empty, .loading{text-align:center;padding:40px 10px;color:#7a867f;font-size:.9rem;}
   table{width:100%;border-collapse:collapse;background:#fff;font-size:.85rem;}
-  thead th{text-align:left;padding:8px 10px;border-bottom:2px solid var(--ink);white-space:nowrap;position:sticky;top:96px;background:#fff;}
+  thead th{text-align:left;padding:8px 10px;border-bottom:2px solid var(--ink);white-space:nowrap;background:#fff;}
   tbody td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:middle;}
   tbody tr:hover{background:#faf9f4;}
   .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:8px;}
@@ -287,8 +287,24 @@ function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g, c=>({'&':'
 async function toggleStatus(r){
   const newStatus = r.Status === 'Sudah Rijek' ? 'Belum Rijek' : 'Sudah Rijek';
   r.Status = newStatus; // optimistic
-  render();
+  document.getElementById('statBelum').textContent = allData.filter(x=>x.Status==='Belum Rijek').length;
+  document.getElementById('statSudah').textContent = allData.filter(x=>x.Status==='Sudah Rijek').length;
+  updateStatusUI(r);
   await apiPost('update', {id:r.ID, status:newStatus});
+}
+
+function updateStatusUI(r){
+  const belum = r.Status !== 'Sudah Rijek';
+  const tbtn = document.getElementById('tstatus-'+r.ID);
+  if (tbtn){
+    tbtn.className = 'status-pill '+(belum?'belum':'sudah');
+    tbtn.textContent = belum?'Belum Rijek':'Sudah Rijek';
+  }
+  const cbtn = document.getElementById('status-'+r.ID);
+  if (cbtn){
+    cbtn.className = 'status-btn '+(belum?'belum':'sudah');
+    cbtn.textContent = belum?'Belum Rijek — Tandai Sudah':'Sudah Rijek — Tandai Belum';
+  }
 }
 
 async function saveEdit(r){
